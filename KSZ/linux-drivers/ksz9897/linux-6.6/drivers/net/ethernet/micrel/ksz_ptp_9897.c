@@ -1712,6 +1712,31 @@ static void add_tx_delay(struct ptp_ts *ts, int delay, u32 cur_sec)
 	ts->timestamp = ts->t.nsec;
 }  /* add_tx_delay */
 
+static int proc_dev_get_timestamp(struct file_dev_info *info, uint port,
+				  struct ptp_tx_ts *tx)
+{
+	struct ptp_info *ptp = info->dev;
+	struct ksz_sw *sw = ptp->parent;
+	u8 buf[sizeof(struct ptp_msg_options) + 2];
+	struct ptp_msg_options *opt = (struct ptp_msg_options *) &buf[2];
+	int len;
+
+	buf[0] = PTP_CMD_GET_MSG | PTP_CMD_RESP;
+	buf[1] = 0;
+	len = sizeof(buf);
+	memcpy(&opt->id, &tx->hdr.sourcePortIdentity,
+	       sizeof(struct ptp_port_identity));
+	opt->msg = tx->hdr.messageType;
+	opt->seqid = tx->hdr.sequenceId;
+	opt->domain = tx->hdr.domainNumber;
+	opt->reserved[0] = tx->hdr.transportSpecific;
+	opt->port = get_log_port(sw, port);
+	opt->ts = tx->ts;
+	tx->req_time = 0;
+	file_dev_setup_msg(info, buf, len, NULL, NULL);
+	return 0;
+}  /* proc_dev_get_timestamp */
+
 static void save_tx_ts(struct ptp_info *ptp, struct ptp_tx_ts *tx,
 	struct ptp_hw_ts *htx, int delay, uint port)
 {
@@ -1794,6 +1819,11 @@ static void save_tx_ts(struct ptp_info *ptp, struct ptp_tx_ts *tx,
 		tx->skb = NULL;
 	}
 	htx->sending = false;
+	if (ptp->notify_dev && tx->dev) {
+		proc_dev_get_timestamp(tx->dev, port, tx);
+		tx->dev = NULL;
+		tx->hdr.reserved1 = 0;
+	}
 }  /* save_tx_ts */
 
 static int get_link_speed(struct ptp_info *ptp, uint port, bool *half)
@@ -4264,6 +4294,8 @@ static void ptp_get_rx_info(struct ptp_info *ptp, u8 *data, u8 port,
 	case ANNOUNCE_MSG:
 	case SIGNALING_MSG:
 	case PDELAY_RESP_FOLLOW_UP_MSG:
+		if (ptp->notify_dev)
+			info = kzalloc(sizeof(struct ptp_msg_info), GFP_KERNEL);
 		break;
 	case MANAGEMENT_MSG:
 	{
@@ -4501,7 +4533,7 @@ static void ptp_set_tx_info(struct ptp_info *ptp, u8 *data, void *ptr)
 			/* Try to use same hardware port so that the peer will
 			 * not complain.
 			 */
-			if (!p)
+			if (!p && found == 1)
 				p = tx_msg.port + 1;
 			if (p && ntohs(*loc) != p) {
 				int check = ntohs(*loc);
@@ -4641,6 +4673,10 @@ set_tx_info_done:
 			tx = &xtx[p];
 			memcpy(&tx->hdr, &msg->hdr,
 				sizeof(struct ptp_msg_hdr));
+			if (ptp->notify_dev) {
+				tx->dev = ptp->notify_dev;
+				tx->hdr.reserved2 = p;
+			}
 
 			/* Clear previous timestamp if any exists. */
 			tx->ts.timestamp = 0;
