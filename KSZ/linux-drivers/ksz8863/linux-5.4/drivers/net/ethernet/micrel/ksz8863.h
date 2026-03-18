@@ -1,7 +1,7 @@
 /**
  * Microchip KSZ8863 definition file
  *
- * Copyright (c) 2015-2018 Microchip Technology Inc.
+ * Copyright (c) 2015-2026 Microchip Technology Inc.
  *	Tristram Ha <Tristram.Ha@microchip.com>
  *
  * Copyright (c) 2012-2014 Micrel, Inc.
@@ -359,18 +359,20 @@
 #define REG_IND_DATA_HI			REG_IND_DATA_7
 #define REG_IND_DATA_LO			REG_IND_DATA_3
 
-#define REG_PORT_0_MAC_ADDR_0		0x8E
-#define REG_PORT_0_MAC_ADDR_1		0x8F
-#define REG_PORT_0_MAC_ADDR_2		0x90
-#define REG_PORT_0_MAC_ADDR_3		0x91
-#define REG_PORT_0_MAC_ADDR_4		0x92
-#define REG_PORT_0_MAC_ADDR_5		0x93
-#define REG_PORT_1_MAC_ADDR_0		0x94
-#define REG_PORT_1_MAC_ADDR_1		0x95
-#define REG_PORT_1_MAC_ADDR_2		0x96
-#define REG_PORT_1_MAC_ADDR_3		0x97
-#define REG_PORT_1_MAC_ADDR_4		0x98
-#define REG_PORT_1_MAC_ADDR_5		0x99
+#define REG_PORT_0_MAC_ADDR_5		0x8E
+#define REG_PORT_0_MAC_ADDR_4		0x8F
+#define REG_PORT_0_MAC_ADDR_3		0x90
+#define REG_PORT_0_MAC_ADDR_2		0x91
+#define REG_PORT_0_MAC_ADDR_1		0x92
+#define REG_PORT_0_MAC_ADDR_0		0x93
+#define REG_PORT_1_MAC_ADDR_5		0x94
+#define REG_PORT_1_MAC_ADDR_4		0x95
+#define REG_PORT_1_MAC_ADDR_3		0x96
+#define REG_PORT_1_MAC_ADDR_2		0x97
+#define REG_PORT_1_MAC_ADDR_1		0x98
+#define REG_PORT_1_MAC_ADDR_0		0x99
+#define REG_PORT_0_MAC_ADDR_H		REG_PORT_0_MAC_ADDR_1
+#define REG_PORT_1_MAC_ADDR_H		REG_PORT_1_MAC_ADDR_1
 
 #define REG_PORT_1_OUT_RATE_0		0x9A
 #define REG_PORT_2_OUT_RATE_0		0x9E

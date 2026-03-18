@@ -1,7 +1,7 @@
 /**
  * Microchip KSZ8463 definition file
  *
- * Copyright (c) 2015-2016 Microchp Technology Inc.
+ * Copyright (c) 2015-2026 Microchp Technology Inc.
  *	Tristram Ha <Tristram.Ha@microchip.com>
  *
  * Copyright (c) 2012-2013 Micrel, Inc.
@@ -82,8 +82,8 @@
 
 #define PORT_DROP_TAG			PORT_DROP_TAG_PKT
 
-#define REG_PORT_0_MAC_ADDR_0		REG_SA_FILTER_MAC1_H
-#define REG_PORT_1_MAC_ADDR_0		REG_SA_FILTER_MAC2_H
+#define REG_PORT_0_MAC_ADDR_H		REG_SA_FILTER_MAC1_H
+#define REG_PORT_1_MAC_ADDR_H		REG_SA_FILTER_MAC2_H
 
 #define REG_PORT_IN_RATE_0		REG_PORT_IN_RATE0
 #define REG_PORT_OUT_RATE_0		REG_PORT_OUT_RATE0

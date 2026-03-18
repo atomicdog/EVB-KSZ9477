@@ -1,7 +1,7 @@
 /**
  * Microchip switch common code
  *
- * Copyright (c) 2015-2025 Microchip Technology Inc.
+ * Copyright (c) 2015-2026 Microchip Technology Inc.
  *	Tristram Ha <Tristram.Ha@microchip.com>
  *
  * Copyright (c) 2010-2015 Micrel, Inc.
@@ -2341,24 +2341,20 @@ static inline void port_get_addr(struct ksz_sw *sw, uint port, u8 *mac_addr)
 {
 	int i;
 	SW_D reg;
-#if (SW_SIZE == (2))
 	u16 *addr = (u16 *) mac_addr;
-#endif
+	u16 data;
 
 	if (0 == port)
-		reg = REG_PORT_0_MAC_ADDR_0;
+		reg = REG_PORT_0_MAC_ADDR_H;
 	else
-		reg = REG_PORT_1_MAC_ADDR_0;
-#if (SW_SIZE == (2))
+		reg = REG_PORT_1_MAC_ADDR_H;
 	for (i = 0; i < 6; i += 2) {
-		*addr = sw->reg->r16(sw, reg - i);
-		*addr = ntohs(*addr);
-		addr++;
-	}
-#else
-	for (i = 0; i < 6; i++)
-		mac_addr[i] = sw->reg->r8(sw, reg + i);
+		data = sw->reg->r16(sw, reg - i);
+#if (SW_SIZE == (2))
+		data = ntohs(data);
 #endif
+		*addr++ = data;
+	}
 	memcpy(sw->port_info[port].mac_addr, mac_addr, 6);
 }
 
@@ -2374,23 +2370,20 @@ static void port_set_addr(struct ksz_sw *sw, uint port, u8 *mac_addr)
 {
 	int i;
 	SW_D reg;
-#if (SW_SIZE == (2))
 	u16 *addr = (u16 *) mac_addr;
-#endif
+	u16 data;
 
 	if (0 == port)
-		reg = REG_PORT_0_MAC_ADDR_0;
+		reg = REG_PORT_0_MAC_ADDR_H;
 	else
-		reg = REG_PORT_1_MAC_ADDR_0;
-#if (SW_SIZE == (2))
+		reg = REG_PORT_1_MAC_ADDR_H;
 	for (i = 0; i < 6; i += 2) {
-		sw->reg->w16(sw, reg - i, htons(*addr));
-		addr++;
-	}
-#else
-	for (i = 0; i < 6; i++)
-		sw->reg->w8(sw, reg + i, mac_addr[i]);
+		data = *addr++;
+#if (SW_SIZE == (2))
+		data = htons(data);
 #endif
+		sw->reg->w16(sw, reg - i, data);
+	}
 	memcpy(sw->port_info[port].mac_addr, mac_addr, 6);
 }
 
