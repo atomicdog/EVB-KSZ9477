@@ -1,7 +1,7 @@
 /**
  * Microchip gigabit switch common code
  *
- * Copyright (c) 2015-2025 Microchip Technology Inc.
+ * Copyright (c) 2015-2026 Microchip Technology Inc.
  *	Tristram Ha <Tristram.Ha@microchip.com>
  *
  * Copyright (c) 2010-2015 Micrel, Inc.
@@ -2593,6 +2593,7 @@ static void sw_set_spi(struct ksz_sw *sw, struct ksz_iba_info *iba);
 #endif
 #ifdef CONFIG_1588_PTP
 #include "ksz_ptp_9897.c"
+#include "avtpdu_1722.h"
 #endif
 
 /* -------------------------------------------------------------------------- */
@@ -14489,8 +14490,40 @@ static struct sk_buff *sw_check_skb(struct ksz_sw *sw, struct sk_buff *skb,
 	port = get_tx_tag_ports(sw, &tx_tag);
 
 #ifdef CONFIG_1588_PTP
-	if (ptp && ptp->started)
-		ptp_set_tx_info(ptp, skb->data, &tx_tag);
+	if (ptp && ptp->started) {
+		u8 *data = skb->data;
+		u8 avtpdu[80];
+
+		if (skb->protocol == htons(AVTPDU_PROTO)) {
+			struct aed_test_status *aed = (struct aed_test_status *)
+				&skb->data[14];
+			u16 ctrl_data_len = ntohs(aed->len.data);
+			u16 cmd_type = ntohs(aed->type.data);
+
+			/* Simulate PTP message to send out the AVTPDU to
+			 * specific port.
+			 */
+			if (aed->subtype == IEEE_1722_1_AECP &&
+			    (cmd_type & 0x7FFF) == IEEE_1722_1_GET_COUNTERS &&
+			    (ctrl_data_len & ((1 << 11) - 1)) ==
+			    AED_TEST_STATUS_LEN) {
+				struct ptp_msg_hdr *hdr = (struct ptp_msg_hdr *)
+					&avtpdu[14];
+				u16 *proto = (u16 *)&avtpdu[12];
+
+				*proto = htons(0x88F7);
+				hdr->messageType = 5;
+				hdr->domainNumber = 0;
+				hdr->sequenceId = aed->sequence_id;
+				memcpy(&hdr->sourcePortIdentity.clockIdentity,
+				       &aed->target_entity_id, 8);
+				hdr->sourcePortIdentity.port = 0;
+				hdr->versionPTP = 2;
+				data = avtpdu;
+			}
+		}
+		ptp_set_tx_info(ptp, data, &tx_tag);
+	}
 #endif
 	if (!port) {
 		/* Used to get VLAN for which device to send. */
