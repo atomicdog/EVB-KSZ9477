@@ -1,7 +1,7 @@
 /**
  * Microchip switch common header
  *
- * Copyright (c) 2015-2025 Microchip Technology Inc.
+ * Copyright (c) 2015-2026 Microchip Technology Inc.
  *	Tristram Ha <Tristram.Ha@microchip.com>
  *
  * Copyright (c) 2010-2015 Micrel, Inc.
@@ -583,6 +583,15 @@ struct ksz_sw {
 	struct ksz_timer_info *monitor_timer_info;
 	struct ksz_counter_info *counter;
 	struct delayed_work *link_read;
+
+#ifdef CONFIG_KSZ_STP
+	struct {
+		u64 rx;
+		u64 tx;
+	} mib_flow_ctrl[TOTAL_PORT_NUM];
+	struct delayed_work start_sw_work;
+	struct work_struct chk_flow_ctrl_work;
+#endif
 
 	const struct ksz_sw_ops *ops;
 	const struct ksz_sw_reg_ops *reg;

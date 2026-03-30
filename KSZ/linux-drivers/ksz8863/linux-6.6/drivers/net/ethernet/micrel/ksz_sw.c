@@ -1018,6 +1018,10 @@ static inline void port_init_cnt(struct ksz_sw *sw, uint port)
 	mib->rate[0].last = mib->rate[1].last = 0;
 	mib->rate[0].last_cnt = mib->rate[1].last_cnt = 0;
 	mib->rate[0].peak = mib->rate[1].peak = 0;
+#ifdef CONFIG_KSZ_STP
+	sw->mib_flow_ctrl[port].rx = 0;
+	sw->mib_flow_ctrl[port].tx = 0;
+#endif
 	mutex_unlock(&sw->lock);
 }  /* port_init_cnt */
 
@@ -3337,6 +3341,19 @@ static void bridge_change(struct ksz_sw *sw)
 }  /* bridge_change */
 #endif
 
+#ifdef CONFIG_KSZ_STP
+#define HAVE_INC_MAC_ADDR
+static void inc_mac_addr(u8 *dst, const u8 *src, u8 inc)
+{
+	memcpy(dst, src, ETH_ALEN);
+	dst[5] += inc;
+	if (dst[5] < src[5])
+		dst[4]++;
+	if (dst[4] < src[4])
+		dst[3]++;
+}  /* inc_mac_addr */
+#endif
+
 #define MAX_SW_LEN			1500
 
 #ifdef CONFIG_KSZ_STP
@@ -5555,6 +5572,10 @@ static int sysfs_sw_write(struct ksz_sw *sw, int proc_num,
 			mib->rate[0].last = mib->rate[1].last = 0;
 			mib->rate[0].last_cnt = mib->rate[1].last_cnt = 0;
 			mib->rate[0].peak = mib->rate[1].peak = 0;
+#ifdef CONFIG_KSZ_STP
+			sw->mib_flow_ctrl[count].rx = 0;
+			sw->mib_flow_ctrl[count].tx = 0;
+#endif
 		}
 		break;
 	case PROC_SET_SW_REG:
@@ -6055,6 +6076,10 @@ static int sysfs_port_write(struct ksz_sw *sw, int proc_num, uint port,
 		mib->rate[0].last = mib->rate[1].last = 0;
 		mib->rate[0].last_cnt = mib->rate[1].last_cnt = 0;
 		mib->rate[0].peak = mib->rate[1].peak = 0;
+#ifdef CONFIG_KSZ_STP
+		sw->mib_flow_ctrl[port].rx = 0;
+		sw->mib_flow_ctrl[port].tx = 0;
+#endif
 		break;
 	}
 	case PROC_ENABLE_BROADCAST_STORM:
@@ -7058,8 +7083,10 @@ static int sw_drv_rx(struct ksz_sw *sw, struct sk_buff *skb, uint port)
 #ifdef CONFIG_KSZ_STP
 	if (sw->features & STP_SUPPORT) {
 		ret = stp_rcv(&sw->info->rstp, skb, port);
-		if (!ret)
+		if (!ret) {
+			schedule_work(&sw->chk_flow_ctrl_work);
 			return ret;
+		}
 	}
 #endif
 #ifdef CONFIG_KSZ_DLR
@@ -7524,6 +7551,53 @@ done:
 	return skb;
 }  /* sw_final_skb */
 
+#ifdef CONFIG_KSZ_STP
+#ifdef CONFIG_HAVE_KSZ8463
+#define REG_CHIP_ID1	REG_SWITCH_SIDER
+#endif
+
+static void ksz_start_sw_work(struct work_struct *work)
+{
+	struct delayed_work *dwork = to_delayed_work(work);
+	struct ksz_sw *sw = container_of(dwork, struct ksz_sw, start_sw_work);
+
+	sw->ops->acquire(sw);
+	sw_cfg(sw, REG_CHIP_ID1, SWITCH_START, 1);
+	sw->ops->release(sw);
+}
+
+static void ksz_chk_flow_ctrl_work(struct work_struct *work)
+{
+	struct ksz_sw *sw = container_of(work, struct ksz_sw,
+					 chk_flow_ctrl_work);
+	struct ksz_port_mib *mib;
+	u64 rx_pause, tx_mcast;
+	bool stop_sw = false;
+	uint p;
+
+	for (p = 0; p < sw->port_cnt; p++) {
+		mib = get_port_mib(sw, p);
+		if (mib->counter[MIB_RX_PAUSE] > sw->mib_flow_ctrl[p].rx) {
+			rx_pause = mib->counter[MIB_RX_PAUSE] -
+				sw->mib_flow_ctrl[p].rx;
+			tx_mcast = mib->counter[MIB_TX_MULTICAST] -
+				sw->mib_flow_ctrl[p].tx;
+			if (rx_pause > 20 && !tx_mcast)
+				stop_sw = true;
+		}
+		sw->mib_flow_ctrl[p].rx = mib->counter[MIB_RX_PAUSE];
+		sw->mib_flow_ctrl[p].tx = mib->counter[MIB_TX_MULTICAST];
+	}
+	if (!stop_sw)
+		return;
+
+	sw->ops->acquire(sw);
+	sw_cfg(sw, REG_CHIP_ID1, SWITCH_START, 0);
+	sw->ops->release(sw);
+	schedule_delayed_work(&sw->start_sw_work, msecs_to_jiffies(500));
+}
+#endif
+
 #ifdef CONFIG_DELAY_REQUEST_INTR
 static int sw_start_interrupt(struct sw_priv *ks, const char *name);
 #endif
@@ -7541,6 +7615,11 @@ static void sw_start(struct ksz_sw *sw, const u8 *addr)
 	sw_setup_pause(sw);
 	if (1 == sw->dev_count)
 		sw_setup_src_filter(sw, addr);
+#ifndef HAVE_INC_MAC_ADDR
+	/* STP has its own mechanism to handle looping. */
+	if (sw->features & STP_SUPPORT)
+		sw_cfg_src_filter(sw, false);
+#endif
 #ifdef CONFIG_KSZ_DLR
 	if (sw->features & DLR_HW)
 		need_tail_tag = true;
@@ -10154,6 +10233,11 @@ static void ksz_probe_last(struct sw_priv *ks)
 		&kszsw_registers_attr);
 #endif
 	sema_init(&ks->proc_sem, 1);
+
+#ifdef CONFIG_KSZ_STP
+	INIT_WORK(&sw->chk_flow_ctrl_work, ksz_chk_flow_ctrl_work);
+	INIT_DELAYED_WORK(&sw->start_sw_work, ksz_start_sw_work);
+#endif
 
 	INIT_WORK(&ks->mib_read, ksz_mib_read_work);
 
