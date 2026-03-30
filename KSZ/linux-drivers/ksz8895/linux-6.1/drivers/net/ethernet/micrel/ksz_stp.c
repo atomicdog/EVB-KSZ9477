@@ -1,7 +1,7 @@
 /**
  * Microchip RSTP code
  *
- * Copyright (c) 2016-2025 Microchip Technology Inc.
+ * Copyright (c) 2016-2026 Microchip Technology Inc.
  *	Tristram Ha <Tristram.Ha@microchip.com>
  *
  * This program is free software; you can redistribute it and/or modify
@@ -1230,7 +1230,11 @@ static int stp_xmit(struct ksz_stp_info *stp, u8 port)
 		return -ENOMEM;
 
 	memcpy(skb->data, stp->tx_frame, len);
+#ifdef HAVE_INC_MAC_ADDR
+	inc_mac_addr(&skb->data[6], info->mac_addr, port + 1);
+#else
 	memcpy(&skb->data[6], info->mac_addr, ETH_ALEN);
+#endif
 	skb_reset_mac_header(skb);
 	skb_set_network_header(skb, ETH_HLEN);
 
@@ -3967,9 +3971,16 @@ static void invoke_state_machines(struct ksz_stp_bridge *br)
 		schedule_work(&stp->state_machine);
 }  /* invoke_state_machines */
 
-static void stp_br_init(struct ksz_stp_port *p)
+static void stp_br_prio_init(struct ksz_stp_port *p)
 {
 	BridgeIdentifier.prio = htons(0x8000);
+}
+
+static void stp_br_init(struct ksz_stp_port *p)
+{
+#if 0
+	BridgeIdentifier.prio = htons(0x8000);
+#endif
 	BridgePriority.prio.root.prio =
 	BridgePriority.prio.bridge_id.prio =
 		BridgeIdentifier.prio;
@@ -3987,9 +3998,16 @@ static void stp_br_init(struct ksz_stp_port *p)
 	p->br->hack_5_2 = 0;
 }  /* stp_br_init */
 
-static void stp_port_init(struct ksz_stp_port *p)
+static void stp_port_prio_init(struct ksz_stp_port *p)
 {
 	portId.prio = 0x80;
+}
+
+static void stp_port_init(struct ksz_stp_port *p)
+{
+#if 0
+	portId.prio = 0x80;
+#endif
 	adminPointToPointMAC = ADMIN_P2P_AUTO;
 	AdminPortPathCost = 0;
 	AdminEdge = FALSE;
@@ -4994,6 +5012,7 @@ static void ksz_stp_init(struct ksz_stp_info *stp, struct ksz_sw *sw)
 		skb_queue_head_init(&p->rxq);
 		p->port_index = i;
 		p->br = br;
+		stp_port_prio_init(p);
 		stp_port_init(p);
 	}
 
@@ -5020,6 +5039,7 @@ static void ksz_stp_init(struct ksz_stp_info *stp, struct ksz_sw *sw)
 
 	p = &br->ports[0];
 	ZERO(BridgePriority);
+	stp_br_prio_init(p);
 	stp_br_init(p);
 
 #if defined(HAVE_VID2FID)
