@@ -1,7 +1,7 @@
 /**
  * Microchip KSZ8795 switch common code
  *
- * Copyright (c) 2015-2025 Microchip Technology Inc.
+ * Copyright (c) 2015-2026 Microchip Technology Inc.
  *	Tristram Ha <Tristram.Ha@microchip.com>
  *
  * Copyright (c) 2010-2015 Micrel, Inc.
@@ -1284,6 +1284,10 @@ static void sw_cfg_mib_counter_ctrl(struct ksz_sw *sw, int ctrl, uint port)
 			mib->rate[0].last = mib->rate[1].last = 0;
 			mib->rate[0].last_cnt = mib->rate[1].last_cnt = 0;
 			mib->rate[0].peak = mib->rate[1].peak = 0;
+#ifdef CONFIG_KSZ_STP
+			sw->mib_flow_ctrl[port].rx = 0;
+			sw->mib_flow_ctrl[port].tx = 0;
+#endif
 		}
 }  /* sw_cfg_mib_counter_ctrl */
 
@@ -1324,6 +1328,10 @@ static inline void port_init_cnt(struct ksz_sw *sw, uint port)
 	mib->rate[0].last = mib->rate[1].last = 0;
 	mib->rate[0].last_cnt = mib->rate[1].last_cnt = 0;
 	mib->rate[0].peak = mib->rate[1].peak = 0;
+#ifdef CONFIG_KSZ_STP
+	sw->mib_flow_ctrl[port].rx = 0;
+	sw->mib_flow_ctrl[port].tx = 0;
+#endif
 }  /* port_init_cnt */
 
 /* -------------------------------------------------------------------------- */
@@ -4072,6 +4080,7 @@ static void sw_init_vlan(struct ksz_sw *sw)
 	}
 }  /* sw_init_vlan */
 
+#define HAVE_INC_MAC_ADDR
 static void inc_mac_addr(u8 *dst, u8 *src, u8 inc)
 {
 #ifdef USE_SAME_ADDR
@@ -6356,6 +6365,8 @@ static ssize_t sysfs_sw_read(struct ksz_sw *sw, int proc_num,
 			PAUSE_FLOW_CTRL);
 		len += sprintf(buf + len, "\t%08x = fast aging\n",
 			FAST_AGING);
+		len += sprintf(buf + len, "\t%08x = no sw reset\n",
+			NO_SW_RESET);
 		len += sprintf(buf + len, "\t%08x = ACL intr monitor\n",
 			ACL_INTR_MONITOR);
 		len += sprintf(buf + len, "\t%08x = tag is removed\n",
@@ -8575,8 +8586,10 @@ static int sw_drv_rx(struct ksz_sw *sw, struct sk_buff *skb, uint port)
 #ifdef CONFIG_KSZ_STP
 	if (sw->features & STP_SUPPORT) {
 		ret = stp_rcv(&sw->info->rstp, skb, port);
-		if (!ret)
+		if (!ret) {
+			schedule_work(&sw->chk_flow_ctrl_work);
 			return ret;
+		}
 	}
 #endif
 #ifdef PROC_MRP
@@ -8915,6 +8928,67 @@ static struct sk_buff *sw_final_skb(struct ksz_sw *sw, struct sk_buff *skb,
 	return skb;
 }  /* sw_final_skb */
 
+#ifdef CONFIG_KSZ_STP
+static void stop_stp(struct ksz_sw *sw)
+{
+	struct ksz_stp_info *stp = &sw->info->rstp;
+	uint i, p;
+
+	stp_stop(stp, true);
+	sw->ops->acquire(sw);
+	for (i = 1; i <= sw->mib_cnt; i++) {
+		p = get_phy_port(sw, i);
+		sw_cfg_port_base_vlan(sw, p, sw->PORT_MASK);
+		port_cfg_rx(sw, p, 1);
+		port_cfg_tx(sw, p, 1);
+	}
+	sw_flush_dyn_mac_table(sw, TOTAL_PORT_NUM);
+	sw->ops->release(sw);
+	sw_clr_sta_mac_table(sw);
+}
+
+static void ksz_start_sw_work(struct work_struct *work)
+{
+	struct delayed_work *dwork = to_delayed_work(work);
+	struct ksz_sw *sw = container_of(dwork, struct ksz_sw, start_sw_work);
+
+	sw->ops->acquire(sw);
+	sw_cfg(sw, REG_CHIP_ID1, SW_START, 1);
+	sw->ops->release(sw);
+}
+
+static void ksz_chk_flow_ctrl_work(struct work_struct *work)
+{
+	struct ksz_sw *sw = container_of(work, struct ksz_sw,
+					 chk_flow_ctrl_work);
+	struct ksz_port_mib *mib;
+	u64 rx_pause, tx_mcast;
+	bool stop_sw = false;
+	uint p;
+
+	for (p = 0; p < sw->port_cnt; p++) {
+		mib = get_port_mib(sw, p);
+		if (mib->counter[MIB_RX_PAUSE] > sw->mib_flow_ctrl[p].rx) {
+			rx_pause = mib->counter[MIB_RX_PAUSE] -
+				sw->mib_flow_ctrl[p].rx;
+			tx_mcast = mib->counter[MIB_TX_MULTICAST] -
+				sw->mib_flow_ctrl[p].tx;
+			if (rx_pause > 20 && !tx_mcast)
+				stop_sw = true;
+		}
+		sw->mib_flow_ctrl[p].rx = mib->counter[MIB_RX_PAUSE];
+		sw->mib_flow_ctrl[p].tx = mib->counter[MIB_TX_MULTICAST];
+	}
+	if (!stop_sw)
+		return;
+
+	sw->ops->acquire(sw);
+	sw_cfg(sw, REG_CHIP_ID1, SW_START, 0);
+	sw->ops->release(sw);
+	schedule_delayed_work(&sw->start_sw_work, msecs_to_jiffies(500));
+}
+#endif
+
 static void sw_start(struct ksz_sw *sw, u8 *addr)
 {
 	int need_tail_tag = false;
@@ -9049,6 +9123,13 @@ static int sw_stop(struct ksz_sw *sw, int complete)
 		struct mrp_info *mrp = &sw->mrp;
 
 		mrp_stop(mrp);
+	}
+#endif
+
+#ifdef CONFIG_KSZ_STP
+	if ((sw->features & STP_SUPPORT) && (sw->overrides & NO_SW_RESET)) {
+		stop_stp(sw);
+		return 0;
 	}
 #endif
 
@@ -12159,6 +12240,11 @@ dbg_msg("ports: %x\n", ports);
 		&kszsw_registers_attr);
 #endif
 	sema_init(&ks->proc_sem, 1);
+
+#ifdef CONFIG_KSZ_STP
+	INIT_WORK(&sw->chk_flow_ctrl_work, ksz_chk_flow_ctrl_work);
+	INIT_DELAYED_WORK(&sw->start_sw_work, ksz_start_sw_work);
+#endif
 
 	INIT_WORK(&ks->mib_read, ksz8795_mib_read_work);
 

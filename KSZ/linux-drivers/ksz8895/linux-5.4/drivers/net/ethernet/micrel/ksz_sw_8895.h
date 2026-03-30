@@ -1,7 +1,7 @@
 /**
  * Microchip KSZ8895 switch common header
  *
- * Copyright (c) 2015-2025 Microchip Technology Inc.
+ * Copyright (c) 2015-2026 Microchip Technology Inc.
  *	Tristram Ha <Tristram.Ha@microchip.com>
  *
  * Copyright (c) 2010-2015 Micrel, Inc.
@@ -493,6 +493,7 @@ struct phy_priv {
 #define UPDATE_CSUM			(1 << 2)
 #define HAVE_MORE_THAN_2_PORTS		(1 << 3)
 #define NO_TX_LOCK			(1 << 8)
+#define NO_SW_RESET			(1 << 9)
 
 #define SYSFS_PHY_PORT			(1 << 18)
 
@@ -580,6 +581,15 @@ struct ksz_sw {
 	struct ksz_timer_info *monitor_timer_info;
 	struct ksz_counter_info *counter;
 	struct delayed_work *link_read;
+
+#ifdef CONFIG_KSZ_STP
+	struct {
+		u64 rx;
+		u64 tx;
+	} mib_flow_ctrl[TOTAL_PORT_NUM];
+	struct delayed_work start_sw_work;
+	struct work_struct chk_flow_ctrl_work;
+#endif
 
 #if defined(CONFIG_PHYLINK) || defined(CONFIG_PHYLINK_MODULE)
 	struct device_node *devnode[TOTAL_PORT_NUM];
