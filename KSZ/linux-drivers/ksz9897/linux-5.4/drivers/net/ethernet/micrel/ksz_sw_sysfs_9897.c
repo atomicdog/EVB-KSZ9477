@@ -1,7 +1,7 @@
 /**
  * Microchip gigabit switch common sysfs code
  *
- * Copyright (c) 2015-2025 Microchip Technology Inc.
+ * Copyright (c) 2015-2026 Microchip Technology Inc.
  *	Tristram Ha <Tristram.Ha@microchip.com>
  *
  * Copyright (c) 2011-2014 Micrel, Inc.
@@ -314,6 +314,7 @@ NETLAN_WR_ENTRY(dynamic_table);
 NETLAN_WR_ENTRY(static_table);
 NETLAN_RD_ENTRY(vlan_table);
 NETLAN_RD_ENTRY(hsr_table);
+NETLAN_WR_ENTRY(resv_mcast);
 NETLAN_WR_ENTRY(aging);
 NETLAN_WR_ENTRY(fast_aging);
 NETLAN_WR_ENTRY(link_aging);
@@ -681,6 +682,7 @@ static struct attribute *lan_attrs[] = {
 	&lan_attr_static_table.attr,
 	&lan_attr_vlan_table.attr,
 	&lan_attr_hsr_table.attr,
+	&lan_attr_resv_mcast.attr,
 	&lan_attr_aging.attr,
 	&lan_attr_fast_aging.attr,
 	&lan_attr_link_aging.attr,

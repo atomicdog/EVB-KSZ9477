@@ -59,6 +59,7 @@ enum {
 	PROC_STATIC,
 	PROC_VLAN,
 	PROC_HSR,
+	PROC_SET_RESV_MCAST,
 
 	PROC_SET_AGING,
 	PROC_SET_FAST_AGING,
@@ -790,6 +791,46 @@ static int wait_for_hsr_table(struct ksz_sw *sw)
 
 /* Switch functions */
 
+/**
+ * sw_chk - check switch register bits
+ * @sw:		The switch instance.
+ * @addr:	The address of the switch register.
+ * @bits:	The data bits to check.
+ *
+ * This function checks whether the specified bits of the switch register are
+ * set or not.
+ *
+ * Return 0 if the bits are not set.
+ */
+static int sw_chk(struct ksz_sw *sw, u32 addr, SW_D bits)
+{
+	SW_D data;
+
+	data = SW_R(sw, addr);
+	return (data & bits) == bits;
+}  /* sw_chk */
+
+/**
+ * sw_cfg - set switch register bits
+ * @sw:		The switch instance.
+ * @addr:	The address of the switch register.
+ * @bits:	The data bits to set.
+ * @set:	The flag indicating whether the bits are to be set or not.
+ *
+ * This function sets or resets the specified bits of the switch register.
+ */
+static void sw_cfg(struct ksz_sw *sw, u32 addr, SW_D bits, bool set)
+{
+	SW_D data;
+
+	data = SW_R(sw, addr);
+	if (set)
+		data |= bits;
+	else
+		data &= ~bits;
+	SW_W(sw, addr, data);
+}  /* sw_cfg */
+
 #ifndef CONFIG_KSZ_IBA_ONLY
 /**
  * sw_r_mac_table - read from MAC table
@@ -1416,8 +1457,17 @@ static ssize_t sw_d_sta_mac_table(struct ksz_sw *sw, char *sbuf, ssize_t slen)
 	u16 ports;
 	struct ksz_mac_table *mac;
 	struct ksz_mac_table table[8];
-	int first_static = true;
+	int first_static = false;
+	int reserv;
 
+	/* Do not need to display reserved multicast table if not enabled. */
+	sw_acquire(sw);
+	reserv = sw_chk(sw, REG_SW_LUE_CTRL_0, SW_RESV_MCAST_ENABLE);
+	sw_release(sw);
+	if (!reserv)
+		goto d_sta_mac;
+
+	first_static = true;
 	for (j = 0; j < 8; j++)
 		addr[j] = get_mcast_reserved_addr(j);
 	sw_r_m_sta_mac_table(sw, addr, 1, 8, table);
@@ -1460,6 +1510,8 @@ static ssize_t sw_d_sta_mac_table(struct ksz_sw *sw, char *sbuf, ssize_t slen)
 		len += sprintf(buf + len, ">");
 		slen += sprintf(sbuf + slen, "%s"NL, buf);
 	}
+
+d_sta_mac:
 	i = 0;
 	do {
 		for (j = 0; j < MAX_IBA_MAC_ENTRIES; j++)
@@ -2518,46 +2570,6 @@ static void port_w_s_32(struct ksz_sw *sw, uint p, u32 reg, u32 mask,
 	data |= (val & mask) << shift;
 	port_w32(sw, p, reg, data);
 }
-
-/**
- * sw_chk - check switch register bits
- * @sw:		The switch instance.
- * @addr:	The address of the switch register.
- * @bits:	The data bits to check.
- *
- * This function checks whether the specified bits of the switch register are
- * set or not.
- *
- * Return 0 if the bits are not set.
- */
-static int sw_chk(struct ksz_sw *sw, u32 addr, SW_D bits)
-{
-	SW_D data;
-
-	data = SW_R(sw, addr);
-	return (data & bits) == bits;
-}  /* sw_chk */
-
-/**
- * sw_cfg - set switch register bits
- * @sw:		The switch instance.
- * @addr:	The address of the switch register.
- * @bits:	The data bits to set.
- * @set:	The flag indicating whether the bits are to be set or not.
- *
- * This function sets or resets the specified bits of the switch register.
- */
-static void sw_cfg(struct ksz_sw *sw, u32 addr, SW_D bits, bool set)
-{
-	SW_D data;
-
-	data = SW_R(sw, addr);
-	if (set)
-		data |= bits;
-	else
-		data &= ~bits;
-	SW_W(sw, addr, data);
-}  /* sw_cfg */
 
 static SW_D sw_r_shift(struct ksz_sw *sw, u32 addr, u32 mask,
 	u32 shift)
@@ -3739,6 +3751,10 @@ static inline void port_init_cnt(struct ksz_sw *sw, uint port)
 	mib->rate[0].last = mib->rate[1].last = 0;
 	mib->rate[0].last_cnt = mib->rate[1].last_cnt = 0;
 	mib->rate[0].peak = mib->rate[1].peak = 0;
+#ifdef CONFIG_KSZ_STP
+	sw->mib_flow_ctrl[port].rx = 0;
+	sw->mib_flow_ctrl[port].tx = 0;
+#endif
 	sw->ops->release(sw);
 }  /* port_init_cnt */
 
@@ -6099,6 +6115,7 @@ static void sw_init_vlan(struct ksz_sw *sw)
 	}
 }  /* sw_init_vlan */
 
+#define HAVE_INC_MAC_ADDR
 static void inc_mac_addr(u8 *dst, u8 *src, u8 inc)
 {
 #ifdef USE_SAME_ADDR
@@ -10333,6 +10350,8 @@ static ssize_t sysfs_sw_read(struct ksz_sw *sw, int proc_num,
 			UPDATE_CSUM);
 		len += sprintf(buf + len, "\t%08lx = delay update link"NL,
 			DELAY_UPDATE_LINK);
+		len += sprintf(buf + len, "\t%08lx = no sw reset"NL,
+			NO_SW_RESET);
 #ifdef CONFIG_KSZ_IBA
 		len += sprintf(buf + len, "\t%08lx = IBA test"NL,
 			IBA_TEST);
@@ -10383,6 +10402,9 @@ static ssize_t sysfs_sw_read_hw(struct ksz_sw *sw, int proc_num, ssize_t len,
 
 	note[0] = '\0';
 	switch (proc_num) {
+	case PROC_SET_RESV_MCAST:
+		chk = sw_chk(sw, REG_SW_LUE_CTRL_0, SW_RESV_MCAST_ENABLE);
+		break;
 	case PROC_SET_AGING:
 		chk = sw_chk(sw, REG_SW_LUE_CTRL_1, SW_AGING_ENABLE);
 		break;
@@ -10631,6 +10653,10 @@ static int sysfs_sw_write(struct ksz_sw *sw, int proc_num,
 			mib->rate[0].last = mib->rate[1].last = 0;
 			mib->rate[0].last_cnt = mib->rate[1].last_cnt = 0;
 			mib->rate[0].peak = mib->rate[1].peak = 0;
+#ifdef CONFIG_KSZ_STP
+			sw->mib_flow_ctrl[p].rx = 0;
+			sw->mib_flow_ctrl[p].tx = 0;
+#endif
 		}
 		break;
 	case PROC_SET_SW_REG:
@@ -10711,6 +10737,9 @@ static int sysfs_sw_write(struct ksz_sw *sw, int proc_num,
 		break;
 	case PROC_STATIC:
 		sw_clr_sta_mac_table(sw);
+		break;
+	case PROC_SET_RESV_MCAST:
+		sw_cfg(sw, REG_SW_LUE_CTRL_0, SW_RESV_MCAST_ENABLE, num);
 		break;
 	case PROC_SET_AGING:
 		sw_cfg(sw, REG_SW_LUE_CTRL_1, SW_AGING_ENABLE, num);
@@ -11764,6 +11793,10 @@ static int sysfs_port_write(struct ksz_sw *sw, int proc_num, uint n,
 		mib->rate[0].last = mib->rate[1].last = 0;
 		mib->rate[0].last_cnt = mib->rate[1].last_cnt = 0;
 		mib->rate[0].peak = mib->rate[1].peak = 0;
+#ifdef CONFIG_KSZ_STP
+		sw->mib_flow_ctrl[port].rx = 0;
+		sw->mib_flow_ctrl[port].tx = 0;
+#endif
 		break;
 	}
 	case PROC_ENABLE_BROADCAST_STORM:
@@ -13910,8 +13943,10 @@ static int sw_drv_rx(struct ksz_sw *sw, struct sk_buff *skb, uint port)
 #ifdef CONFIG_KSZ_STP
 	if (sw->features & STP_SUPPORT) {
 		ret = stp_rcv(&sw->info->rstp, skb, port);
-		if (!ret)
+		if (!ret) {
+			schedule_work(&sw->chk_flow_ctrl_work);
 			return ret;
+		}
 	}
 #endif
 #ifdef CONFIG_KSZ_MRP
@@ -14689,6 +14724,83 @@ done:
 	return skb;
 }  /* sw_final_skb */
 
+#ifdef CONFIG_KSZ_STP
+static void stop_stp(struct ksz_sw *sw)
+{
+	struct ksz_stp_info *stp = &sw->info->rstp;
+	uint i, p;
+
+	stp_stop(stp, true);
+	sw->ops->acquire(sw);
+	for (i = 1; i <= sw->mib_cnt; i++) {
+		p = get_phy_port(sw, i);
+		sw_cfg_port_base_vlan(sw, p, sw->PORT_MASK);
+		port_cfg_rx(sw, p, 1);
+		port_cfg_tx(sw, p, 1);
+	}
+	sw_cfg(sw, REG_SW_LUE_CTRL_0, SW_RESV_MCAST_ENABLE, 0);
+	sw_clr_sta_mac_table(sw);
+	sw_flush_dyn_mac_table(sw, sw->port_cnt);
+	sw->ops->release(sw);
+}
+
+static void ksz_start_sw_work(struct work_struct *work)
+{
+	struct delayed_work *dwork = to_delayed_work(work);
+	struct ksz_sw *sw = container_of(dwork, struct ksz_sw, start_sw_work);
+
+	sw->ops->acquire(sw);
+	sw_cfg(sw, REG_SW_OPERATION, SW_START, 1);
+	sw->ops->release(sw);
+#ifdef CONFIG_KSZ_IBA
+	if (sw->features & IBA_SUPPORT)
+		schedule_delayed_work(&sw->set_ops, 1);
+#endif
+}
+
+static void ksz_chk_flow_ctrl_work(struct work_struct *work)
+{
+	struct ksz_sw *sw = container_of(work, struct ksz_sw,
+					 chk_flow_ctrl_work);
+	struct ksz_port_mib *mib;
+	u64 rx_pause, tx_mcast;
+	bool stop_sw = false;
+	uint p;
+
+	for (p = 0; p < sw->port_cnt; p++) {
+		mib = get_port_mib(sw, p);
+		if (mib->counter[MIB_RX_PAUSE] > sw->mib_flow_ctrl[p].rx) {
+			rx_pause = mib->counter[MIB_RX_PAUSE] -
+				sw->mib_flow_ctrl[p].rx;
+			tx_mcast = mib->counter[MIB_TX_MULTICAST] -
+				sw->mib_flow_ctrl[p].tx;
+			if (rx_pause > 20 && !tx_mcast)
+				stop_sw = true;
+		}
+		sw->mib_flow_ctrl[p].rx = mib->counter[MIB_RX_PAUSE];
+		sw->mib_flow_ctrl[p].tx = mib->counter[MIB_TX_MULTICAST];
+	}
+	if (!stop_sw)
+		return;
+
+#ifdef CONFIG_KSZ_IBA
+	if ((sw->features & IBA_SUPPORT) && !iba_stopped(sw)) {
+		mutex_lock(&sw->lock);
+		mutex_lock(sw->hwlock);
+		mutex_lock(sw->reglock);
+		sw_set_spi(sw, &sw->info->iba);
+		mutex_unlock(sw->reglock);
+		mutex_unlock(sw->hwlock);
+		mutex_unlock(&sw->lock);
+	}
+#endif
+	sw->ops->acquire(sw);
+	sw_cfg(sw, REG_SW_OPERATION, SW_START, 0);
+	sw->ops->release(sw);
+	schedule_delayed_work(&sw->start_sw_work, msecs_to_jiffies(500));
+}
+#endif
+
 static void sw_start(struct ksz_sw *sw, u8 *addr)
 {
 	int need_tail_tag = false;
@@ -14708,7 +14820,9 @@ static void sw_start(struct ksz_sw *sw, u8 *addr)
 	sw_setup_pause(sw);
 
 	/* STP has its own mechanism to handle looping. */
+#ifndef HAVE_INC_MAC_ADDR
 	if (!(sw->features & STP_SUPPORT))
+#endif
 		sw_cfg_src_filter(sw, true);
 	if (sw->features & (PTP_HW | DLR_HW | HSR_HW))
 		need_tail_tag = true;
@@ -14900,6 +15014,13 @@ static int sw_stop(struct ksz_sw *sw, int complete)
 			sw->ops->release(sw);
 		}
 		return reset;
+	}
+#endif
+
+#ifdef CONFIG_KSZ_STP
+	if ((sw->features & STP_SUPPORT) && (sw->overrides & NO_SW_RESET)) {
+		stop_stp(sw);
+		return 0;
 	}
 #endif
 
@@ -19582,6 +19703,11 @@ info->tx_rate / TX_RATE_UNIT, info->duplex);
 	INIT_WORK(&sw->set_addr, sw_delayed_set_addr);
 	INIT_WORK(&sw->tx_fwd, sw_tx_fwd);
 	skb_queue_head_init(&sw->txq);
+
+#ifdef CONFIG_KSZ_STP
+	INIT_WORK(&sw->chk_flow_ctrl_work, ksz_chk_flow_ctrl_work);
+	INIT_DELAYED_WORK(&sw->start_sw_work, ksz_start_sw_work);
+#endif
 
 	INIT_WORK(&ks->mib_read, ksz9897_mib_read_work);
 

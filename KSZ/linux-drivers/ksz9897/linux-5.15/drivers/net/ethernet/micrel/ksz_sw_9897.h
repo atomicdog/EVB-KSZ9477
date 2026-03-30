@@ -1,7 +1,7 @@
 /**
  * Microchip KSZ9897 switch common header
  *
- * Copyright (c) 2015-2025 Microchip Technology Inc.
+ * Copyright (c) 2015-2026 Microchip Technology Inc.
  *	Tristram Ha <Tristram.Ha@microchip.com>
  *
  * Copyright (c) 2013-2015 Micrel, Inc.
@@ -763,6 +763,7 @@ struct phy_priv {
 #define UPDATE_CSUM			BIT(6)
 #define DELAY_UPDATE_LINK		BIT(7)
 #define NO_TX_LOCK			BIT(8)
+#define NO_SW_RESET			BIT(9)
 
 #define IBA_TEST			BIT(16)
 #define ACL_INTR_MONITOR		BIT(17)
@@ -876,6 +877,15 @@ struct ksz_sw {
 	struct ksz_timer_info *monitor_timer_info;
 	struct ksz_counter_info *counter;
 	struct delayed_work *link_read;
+
+#ifdef CONFIG_KSZ_STP
+	struct {
+		u64 rx;
+		u64 tx;
+	} mib_flow_ctrl[TOTAL_PORT_NUM];
+	struct delayed_work start_sw_work;
+	struct work_struct chk_flow_ctrl_work;
+#endif
 
 #if defined(CONFIG_PHYLINK) || defined(CONFIG_PHYLINK_MODULE)
 	struct device_node *devnode[TOTAL_PORT_NUM];
@@ -1113,6 +1123,7 @@ struct lan_attributes {
 	int static_table;
 	int vlan_table;
 	int hsr_table;
+	int resv_mcast;
 	int aging;
 	int fast_aging;
 	int link_aging;
