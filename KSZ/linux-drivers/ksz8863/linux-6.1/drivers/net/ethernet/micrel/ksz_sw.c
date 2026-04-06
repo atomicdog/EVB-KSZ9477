@@ -7552,7 +7552,7 @@ done:
 }  /* sw_final_skb */
 
 #ifdef CONFIG_KSZ_STP
-#ifdef CONFIG_HAVE_KSZ8463
+#ifndef CONFIG_HAVE_KSZ8863
 #define REG_CHIP_ID1	REG_SWITCH_SIDER
 #endif
 

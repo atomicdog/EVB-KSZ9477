@@ -3938,7 +3938,8 @@ static int port_get_link_speed(struct ksz_port *port)
 			local, info->advertised, remote, info->partner);
 #endif
 		if (remote & PORT_STATUS_LINK_GOOD) {
-			if (port_chk_force_link(sw, p, data, status)) {
+			if (port->flow_ctrl == PHY_FLOW_CTRL &&
+			    port_chk_force_link(sw, p, data, status)) {
 				if (linked == info)
 					linked = NULL;
 				continue;
@@ -7552,7 +7553,7 @@ done:
 }  /* sw_final_skb */
 
 #ifdef CONFIG_KSZ_STP
-#ifdef CONFIG_HAVE_KSZ8463
+#ifndef CONFIG_HAVE_KSZ8863
 #define REG_CHIP_ID1	REG_SWITCH_SIDER
 #endif
 
@@ -9313,6 +9314,9 @@ static int sw_setup_dev(struct ksz_sw *sw, struct net_device *dev,
 	}
 
 	port->flow_ctrl = PHY_FLOW_CTRL;
+#if 1
+	port->flow_ctrl = PHY_NO_FLOW_CTRL;
+#endif
 
 #ifdef CONFIG_KSZ_DLR
 	/* Cannot flow control because of beacon timeout. */
