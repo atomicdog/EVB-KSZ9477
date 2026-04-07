@@ -3509,7 +3509,7 @@ static void sw_notify_link_change(struct ksz_sw *sw, uint ports)
 }  /* sw_notify_link_change */
 
 static int port_chk_force_link(struct ksz_sw *sw, uint p, SW_D data,
-	SW_D status)
+	SW_D remote, SW_D status)
 {
 #define PORT_REMOTE_STATUS				\
 	(PORT_REMOTE_100BTX_FD | PORT_REMOTE_100BTX |	\
@@ -3521,8 +3521,8 @@ static int port_chk_force_link(struct ksz_sw *sw, uint p, SW_D data,
 
 	if (!(data & PORT_AUTO_NEG_ENABLE))
 		return 0;
-	if (!(status & PORT_REMOTE_SYM_PAUSE) &&
-	    (status & PORT_REMOTE_STATUS) != PORT_REMOTE_STATUS) {
+	if (!(remote & PORT_REMOTE_SYM_PAUSE) &&
+	    (remote & PORT_REMOTE_STATUS) != PORT_REMOTE_STATUS) {
 		if (saved_ctrl) {
 			if ((status & PORT_STAT_FULL_DUPLEX) !=
 			    (saved_status & PORT_STAT_FULL_DUPLEX)) {
@@ -3533,8 +3533,12 @@ static int port_chk_force_link(struct ksz_sw *sw, uint p, SW_D data,
 					"full" : "half");
 			}
 			if (data != saved_ctrl) {
-				saved_ctrl |= PORT_AUTO_NEG_RESTART;
+#if (SW_SIZE == (1))
 				port_w(sw, p, P_PHY_CTRL, saved_ctrl);
+				port_r(sw, p, P_NEG_RESTART_CTRL, &saved_ctrl);
+#endif
+				saved_ctrl |= PORT_AUTO_NEG_RESTART;
+				port_w(sw, p, P_NEG_RESTART_CTRL, saved_ctrl);
 				test_stage = 2;
 			} else
 				test_stage = 0;
@@ -3548,8 +3552,12 @@ static int port_chk_force_link(struct ksz_sw *sw, uint p, SW_D data,
 				data &= ~PORT_FORCE_FULL_DUPLEX;
 			else
 				data |= PORT_FORCE_FULL_DUPLEX;
-			data |= PORT_AUTO_NEG_RESTART;
+#if (SW_SIZE == (1))
 			port_w(sw, p, P_PHY_CTRL, data);
+			port_r(sw, p, P_NEG_RESTART_CTRL, &data);
+#endif
+			data |= PORT_AUTO_NEG_RESTART;
+			port_w(sw, p, P_NEG_RESTART_CTRL, data);
 			test_stage = 1;
 			return 1;
 		}
@@ -3611,7 +3619,7 @@ static int port_get_link_speed(struct ksz_port *port)
 			local, info->advertised, remote, info->partner);
 #endif
 		if (remote & PORT_STATUS_LINK_GOOD) {
-			if (port_chk_force_link(sw, p, data, status)) {
+			if (port_chk_force_link(sw, p, data, remote, status)) {
 				if (linked == info)
 					linked = NULL;
 				continue;
