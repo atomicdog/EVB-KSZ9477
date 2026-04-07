@@ -553,7 +553,7 @@ struct phy_priv {
 #define DIFF_MAC_ADDR			(1 << 30)
 
 /* Software overrides. */
-#define PAUSE_FLOW_CTRL			(1 << 0)
+#define NO_FLOW_CTRL			(1 << 0)
 #define FAST_AGING			(1 << 1)
 #define UPDATE_CSUM			(1 << 2)
 #define HAVE_MORE_THAN_2_PORTS		(1 << 3)

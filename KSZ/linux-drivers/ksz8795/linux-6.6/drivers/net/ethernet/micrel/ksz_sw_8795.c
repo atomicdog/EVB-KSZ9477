@@ -4080,6 +4080,7 @@ static void sw_init_vlan(struct ksz_sw *sw)
 	}
 }  /* sw_init_vlan */
 
+#define HAVE_INC_MAC_ADDR
 static void inc_mac_addr(u8 *dst, const u8 *src, u8 inc)
 {
 #ifdef USE_SAME_ADDR
@@ -4525,7 +4526,7 @@ static u8 sw_determine_flow_ctrl(struct ksz_sw *sw, struct ksz_port *port,
 	int tx;
 	u8 flow = 0;
 
-	if (sw->overrides & PAUSE_FLOW_CTRL)
+	if (sw->overrides & NO_FLOW_CTRL)
 		return flow;
 
 	rx = tx = 0;
@@ -5265,10 +5266,6 @@ static void sw_init(struct ksz_sw *sw)
 	sw_init_vlan(sw);
 
 	sw_init_acl(sw);
-
-	if (sw_chk(sw, REG_SW_CTRL_1,
-			SW_TX_FLOW_CTRL_DISABLE | SW_RX_FLOW_CTRL_DISABLE))
-		sw->overrides |= PAUSE_FLOW_CTRL;
 }  /* sw_init */
 
 /**
@@ -6360,8 +6357,8 @@ static ssize_t sysfs_sw_read(struct ksz_sw *sw, int proc_num,
 		break;
 	case PROC_SET_SW_OVERRIDES:
 		len += sprintf(buf + len, "%08x:\n", sw->overrides);
-		len += sprintf(buf + len, "\t%08x = flow control\n",
-			PAUSE_FLOW_CTRL);
+		len += sprintf(buf + len, "\t%08x = no flow control\n",
+			NO_FLOW_CTRL);
 		len += sprintf(buf + len, "\t%08x = fast aging\n",
 			FAST_AGING);
 		len += sprintf(buf + len, "\t%08x = no sw reset\n",
@@ -11089,6 +11086,8 @@ static int sw_setup_dev(struct ksz_sw *sw, struct net_device *dev,
 	if (!i && (sw->features & MRP_SUPPORT))
 		setup_mrp(&sw->mrp, dev);
 #endif
+	if (sw->overrides & NO_FLOW_CTRL)
+		port->flow_ctrl = PHY_NO_FLOW_CTRL;
 
 	p = get_phy_port(sw, port->first_port);
 	port->sw = sw;

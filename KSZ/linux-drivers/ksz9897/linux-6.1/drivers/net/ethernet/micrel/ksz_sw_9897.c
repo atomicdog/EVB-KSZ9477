@@ -7547,7 +7547,7 @@ static u8 sw_determine_flow_ctrl(struct ksz_sw *sw, bool force_link,
 	int tx;
 	u8 flow = 0;
 
-	if (sw->overrides & PAUSE_FLOW_CTRL)
+	if (sw->overrides & NO_FLOW_CTRL)
 		return flow;
 
 	rx = tx = 0;
@@ -8848,11 +8848,6 @@ static void sw_init(struct ksz_sw *sw)
 	sw_init_vlan(sw);
 
 	sw_init_acl(sw);
-#if 0
-	if (!sw_chk(sw, REG_SWITCH_CTRL_1,
-			SWITCH_TX_FLOW_CTRL | SWITCH_RX_FLOW_CTRL))
-		sw->overrides |= PAUSE_FLOW_CTRL;
-#endif
 }  /* sw_init */
 
 /**
@@ -10339,8 +10334,8 @@ static ssize_t sysfs_sw_read(struct ksz_sw *sw, int proc_num,
 		break;
 	case PROC_SET_SW_OVERRIDES:
 		len += sprintf(buf + len, "%08x:"NL, sw->overrides);
-		len += sprintf(buf + len, "\t%08lx = flow control"NL,
-			PAUSE_FLOW_CTRL);
+		len += sprintf(buf + len, "\t%08lx = no flow control"NL,
+			NO_FLOW_CTRL);
 		len += sprintf(buf + len, "\t%08lx = fast aging"NL,
 			FAST_AGING);
 		len += sprintf(buf + len, "\t%08lx = have >2 ports"NL,
@@ -17832,6 +17827,8 @@ static int sw_setup_dev(struct ksz_sw *sw, struct net_device *dev,
 		setup_mrp(&sw->mrp, dev);
 #endif
 	if (sw->features & AVB_SUPPORT)
+		port->flow_ctrl = PHY_NO_FLOW_CTRL;
+	if (sw->overrides & NO_FLOW_CTRL)
 		port->flow_ctrl = PHY_NO_FLOW_CTRL;
 
 	p = get_phy_port(sw, port->first_port);

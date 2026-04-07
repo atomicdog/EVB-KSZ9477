@@ -3421,7 +3421,7 @@ static u8 sw_determine_flow_ctrl(struct ksz_sw *sw, struct ksz_port *port,
 	int tx;
 	u8 flow = 0;
 
-	if (sw->overrides & PAUSE_FLOW_CTRL)
+	if (sw->overrides & NO_FLOW_CTRL)
 		return flow;
 
 	rx = tx = 0;
@@ -3892,10 +3892,6 @@ static void sw_init(struct ksz_sw *sw)
 	sw_init_prio_rate(sw);
 
 	sw_init_vlan(sw);
-
-	if (!sw_chk(sw, REG_SWITCH_CTRL_1,
-			SWITCH_TX_FLOW_CTRL | SWITCH_RX_FLOW_CTRL))
-		sw->overrides |= PAUSE_FLOW_CTRL;
 }  /* sw_init */
 
 /**
@@ -5032,8 +5028,8 @@ static ssize_t sysfs_sw_read(struct ksz_sw *sw, int proc_num,
 		break;
 	case PROC_SET_SW_OVERRIDES:
 		len += sprintf(buf + len, "%08x:\n", sw->overrides);
-		len += sprintf(buf + len, "\t%08x = flow control\n",
-			PAUSE_FLOW_CTRL);
+		len += sprintf(buf + len, "\t%08x = no flow control\n",
+			NO_FLOW_CTRL);
 		len += sprintf(buf + len, "\t%08x = fast aging\n",
 			FAST_AGING);
 		len += sprintf(buf + len, "\t%08x = tag is removed\n",
@@ -8500,6 +8496,8 @@ static int sw_setup_dev(struct ksz_sw *sw, struct net_device *dev,
 		mib_port_cnt = port_cnt;
 	}
 
+	port->flow_ctrl = PHY_FLOW_CTRL;
+
 #ifdef CONFIG_KSZ_HSR
 	if (sw->eth_cnt && (sw->eth_maps[i].proto & HSR_HW)) {
 		port_cnt = sw->eth_maps[i].cnt;
@@ -8509,11 +8507,12 @@ static int sw_setup_dev(struct ksz_sw *sw, struct net_device *dev,
 		dev->hard_header_len += HSR_HLEN;
 	}
 #endif
+	if (sw->overrides & NO_FLOW_CTRL)
+		port->flow_ctrl = PHY_NO_FLOW_CTRL;
 
 	port->port_cnt = port_cnt;
 	port->mib_port_cnt = mib_port_cnt;
 	port->first_port = p + 1;
-	port->flow_ctrl = PHY_FLOW_CTRL;
 
 #ifdef CONFIG_KSZ_STP
 	if (!i && sw->features & STP_SUPPORT)

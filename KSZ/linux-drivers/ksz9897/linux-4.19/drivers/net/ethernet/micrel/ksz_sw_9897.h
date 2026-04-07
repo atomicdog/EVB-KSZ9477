@@ -747,7 +747,7 @@ struct phy_priv {
 #define PTP_HW				BIT(31)
 
 /* Software overrides. */
-#define PAUSE_FLOW_CTRL			BIT(0)
+#define NO_FLOW_CTRL			BIT(0)
 #define FAST_AGING			BIT(1)
 #define MCAST_FILTER			BIT(2)
 #define HAVE_MORE_THAN_2_PORTS		BIT(3)
