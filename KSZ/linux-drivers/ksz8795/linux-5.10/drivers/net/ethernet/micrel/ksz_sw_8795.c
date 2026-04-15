@@ -9397,6 +9397,18 @@ dbg_msg(" found eth\n");
 					if (name && !strcmp(name, "rmii"))
 						sw->interface =
 							PHY_INTERFACE_MODE_RMII;
+					else if (name && !strcmp(name, "rgmii"))
+						sw->interface =
+							PHY_INTERFACE_MODE_RGMII;
+					else if (name && !strcmp(name, "rgmii-txid"))
+						sw->interface =
+							PHY_INTERFACE_MODE_RGMII_TXID;
+					else if (name && !strcmp(name, "rgmii-rxid"))
+						sw->interface =
+							PHY_INTERFACE_MODE_RGMII_RXID;
+					else if (name && !strcmp(name, "rgmii-id"))
+						sw->interface =
+							PHY_INTERFACE_MODE_RGMII_ID;
 				}
 				name = of_get_property(port, "label", NULL);
 				if (name)
@@ -12177,7 +12189,7 @@ dbg_msg("ports: %x\n", ports);
 			phy = PHY_INTERFACE_MODE_RGMII;
 			if (data & PORT_RGMII_ID_IN_ENABLE)
 				phy = PHY_INTERFACE_MODE_RGMII_RXID;
-			if (data & PORT_RGMII_ID_IN_ENABLE) {
+			if (data & PORT_RGMII_ID_OUT_ENABLE) {
 				if (PHY_INTERFACE_MODE_RGMII_RXID == phy)
 					phy = PHY_INTERFACE_MODE_RGMII_ID;
 				else

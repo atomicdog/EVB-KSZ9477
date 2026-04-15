@@ -11666,7 +11666,7 @@ dbg_msg("ports: %x\n", ports);
 			phy = PHY_INTERFACE_MODE_RGMII;
 			if (data & PORT_RGMII_ID_IN_ENABLE)
 				phy = PHY_INTERFACE_MODE_RGMII_RXID;
-			if (data & PORT_RGMII_ID_IN_ENABLE) {
+			if (data & PORT_RGMII_ID_OUT_ENABLE) {
 				if (PHY_INTERFACE_MODE_RGMII_RXID == phy)
 					phy = PHY_INTERFACE_MODE_RGMII_ID;
 				else
